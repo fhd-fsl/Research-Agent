@@ -4,7 +4,7 @@ This document defines how code, prompts, and state are structured in this repo. 
 every new agent, endpoint, or ingestion source added later follows the same patterns as what's
 already there — for both human contributors and coding agents working in this repo.
 
-See `problem_statement.md` for *what* this system does and `technical_design.md` for *why* it's
+See `PROBLEM_BRIEF.md` for *what* this system does and `ARCHITECTURE.md` for *why* it's
 architected this way. This doc is about *how things are written* day to day.
 
 ---
@@ -16,7 +16,7 @@ src/
 ├── agents/          # one file per agent node, e.g. competitor_finder.py
 ├── graph/            # state schema (state.py) + graph wiring (build_graph.py)
 ├── prompts/           # prompt templates only — no logic
-├── ingestion/          # search API calls, Reddit API, page fetch + cleanup
+├── ingestion/          # Tavily search, HN Algolia, page fetch + cleanup
 ├── config/              # models.py, settings.py — all tunable config lives here
 ├── api/                   # FastAPI routes — thin, no agent logic
 ├── worker/                 # job consumer, runs the graph
@@ -35,16 +35,23 @@ tune a prompt without touching (or re-reviewing) the surrounding code.
 ## 2. Naming Conventions
 
 **Agent functions** — `{purpose}_agent`, and the name must match the node name used in the
-architecture diagram in `technical_design.md` exactly. No renaming one without the other.
+agent graph diagram in `ARCHITECTURE.md` exactly. No renaming one without the other.
 
 ```python
-def competitor_finder_agent(state: ResearchState) -> ResearchState: ...
-def gap_synthesis_agent(state: ResearchState) -> ResearchState: ...
+def idea_parser_agent(state: ResearchState) -> ResearchState: ...
+def competitor_searcher_agent(state: ResearchState) -> ResearchState: ...
+def competitor_relevance_filter_agent(state: ResearchState) -> ResearchState: ...
+def competitor_deep_dive_agent(state: ResearchState) -> ResearchState: ...
+def pain_point_miner_agent(state: ResearchState) -> ResearchState: ...
+def pain_point_relevance_filter_agent(state: ResearchState) -> ResearchState: ...
+def pain_point_clusterer_agent(state: ResearchState) -> ResearchState: ...
+def gap_synthesizer_agent(state: ResearchState) -> ResearchState: ...
+def report_builder_agent(state: ResearchState) -> ResearchState: ...
 ```
 
 **State fields** — `snake_case`, and must match the `ResearchState` schema documented in
-`technical_design.md`. If a field is added or changed in code, update the doc in the same PR —
-they should never drift apart.
+`ARCHITECTURE.md` (Section 9). If a field is added or changed in code, update the doc in the
+same PR — they should never drift apart.
 
 **Source IDs** — `SRC_{NN}`, zero-padded (`SRC_01`, `SRC_02`, ...). Assigned **only** at ingestion
 time, in one place (`src/ingestion/source_map.py`). An LLM never generates a `SRC_ID` — it only
@@ -75,20 +82,30 @@ prompt_content = raw_scraped_text
 
 ## 4. Model Usage
 
-- Model choice per task lives in one place: `src/config/models.py`. Agents reference a task name
-  (`"relevance_filter"`, `"gap_synthesis"`), not a hardcoded model string.
+- The system uses **multiple LLM providers** (Gemini Flash, Groq, Cerebras, OpenRouter). Model
+  and provider choice per task lives in one place: `src/config/models.py`. Agents reference a task
+  name, never a hardcoded model string or provider.
 
 ```python
 # src/config/models.py
 MODEL_FOR_TASK = {
-    "relevance_filter": "llama-3.1-8b-instant",
-    "extraction":         "llama-3.1-8b-instant",
-    "gap_synthesis":      "llama-3.3-70b-versatile",
+    "idea_parsing":       {"provider": "gemini",   "model": "gemini-2.0-flash"},
+    "relevance_filter":   {"provider": "groq",     "model": "llama-3.1-8b-instant"},
+    "competitor_extraction": {"provider": "cerebras", "model": "llama-3.3-70b"},
+    "pain_point_clustering": {"provider": "groq",  "model": "llama-3.1-8b-instant"},
+    "gap_synthesis":      {"provider": "gemini",   "model": "gemini-2.0-flash"},
+    "report_formatting":  {"provider": "groq",     "model": "llama-3.1-8b-instant"},
 }
+
+FALLBACK_PROVIDER = "openrouter"  # used when primary provider returns 429
 ```
 
-- All LLM calls go through one shared wrapper (`src/utils/llm_client.py`) that handles retry with
-  backoff on 429s and logs token usage. No agent calls the Groq API directly.
+- All LLM calls go through one shared wrapper (`src/utils/llm_client.py`) that:
+  - Routes to the correct provider based on the task name
+  - Falls back to OpenRouter if the primary provider returns 429
+  - Handles retry with backoff
+  - Logs token usage per provider per job
+  - No agent calls any provider API directly
 
 ---
 
@@ -142,3 +159,7 @@ test(eval): add regression case for ambiguous product idea
 
 Not strictly enforced, but agents generating commits should default to this format for
 consistency across the history.
+
+**Changelog** — every PR or meaningful commit that changes behavior must have a matching entry in
+`CHANGELOG.md`. See that file for format, categories, and examples. Doc-only and formatting
+changes are exempt.

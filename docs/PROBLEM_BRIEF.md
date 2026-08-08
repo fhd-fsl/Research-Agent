@@ -19,14 +19,18 @@ The user describes their product idea in plain language. The system then:
 3. **Digs into those competitors** — pulls their pricing, feature sets, and general positioning from their own sites and from articles/reviews about them.
 4. **Finds real user pain points** — searches Reddit, forums, blogs, app store reviews, Hacker News, and other places people actually complain about, praise, or wish for things in this space. This is the part that generic "competitor analysis" tools usually skip, and it's the most valuable part — real complaints from real users are stronger signal than a feature comparison table.
 
-   Sources considered:
-   - Reddit (via Reddit's API)
-   - Forums and blogs surfaced through search
-   - App store reviews (Google Play / Apple App Store), when the idea is mobile-relevant — reviews tend to be specific and blunt ("crashes on export," "wish it had X")
-   - Hacker News (via Algolia's free HN Search API) — useful for technical/early-adopter reactions
-   - Product Hunt launch comments — useful for seeing what early users of similar products pushed back on
-   - Job postings that reveal unmet needs (e.g. a company hiring specifically to solve a problem manually) — a secondary, lower-priority source
-   - Sites that actively block automated access (e.g. G2, Capterra) are not scraped directly, but articles/blogs that summarize review sentiment from those sites (which do turn up in normal search) are a valid source
+   Core sources (v1):
+   - General web search (via Tavily) — competitor sites, articles, reviews, blogs, and forums including sites where complaints are summarized (e.g. blog posts aggregating G2/Capterra sentiment)
+   - Reddit (via Tavily search with `site:reddit.com` filter) — gives better search quality than Reddit's own API for finding relevant complaints and discussions
+   - Hacker News (via Algolia's free HN Search API) — useful for technical/early-adopter reactions and launch feedback
+
+   Conditional source:
+   - App store reviews (Google Play / Apple App Store), fetched only when a competitor has a mobile app — filtered to 1-2 star reviews for targeted negative sentiment. Via `google-play-scraper` (Python package, no API key) and Apple's public RSS feed.
+
+   Potential future additions (not in v1):
+   - Product Hunt launch comments
+   - Job postings that reveal unmet needs
+   - Direct G2/Capterra API access if it becomes available
 5. **Synthesizes gaps, not verdicts** — cross-references what competitors are missing against what users are actually complaining about, and surfaces candidate gaps/opportunities. Each gap comes with the evidence behind it (which complaints, which competitor weaknesses, how strong the signal is) rather than a single confident "build this" recommendation. The user makes the final call — the system's job is to make that call well-informed, not to make it for them.
 6. **Produces a report** — a structured, readable output laying out the competitive landscape, the pain points found, and the candidate gaps with their supporting evidence, so the user can quickly orient themselves and decide how to position or adjust their idea.
 
@@ -54,7 +58,7 @@ This also controls cost and effort sensibly: cast a wide net in the initial sear
 
 - Not a business plan generator or a "here's your startup idea" tool — it doesn't tell the user what to build.
 - Not a replacement for talking to real users — it's a fast first pass to inform that, not a substitute for it.
-- Not scraping sites that actively block automated access (e.g., G2, Capterra) — research is done through legitimate search APIs, public APIs (e.g., Reddit's), and publicly accessible pages.
+- Not scraping sites that actively block automated access (e.g., G2, Capterra) — research is done through legitimate search APIs, public APIs (e.g., HN Algolia, Apple RSS), and publicly accessible pages.
 
 ## How It Will Be Built (high level, not architecture)
 
@@ -65,5 +69,5 @@ This also controls cost and effort sensibly: cast a wide net in the initial sear
 
 ## Constraints / Notes
 
-- The project is meant to be low-cost. Infrastructure (AWS free tier, search API free tiers) should stay free or near-free. For the LLM itself, Groq's free API tier (no credit card required, open-source models like Llama 3.3 70B) is the planned option to keep this at effectively zero cost — with the tradeoff that it's rate-limited (requests/tokens per minute and per day), so agent calls need basic pacing/backoff rather than firing everything at once. This should be kept in mind when deciding how many agents/steps run per research pass, and how large a model each step really needs — simpler extraction steps can use smaller/faster models, reserving more capability for the synthesis step that actually requires judgment.
+- The project is meant to be low-cost. Infrastructure should stay free or near-free. For LLM inference, the system uses multiple free-tier providers rather than depending on a single one: **Gemini Flash** (~1,500 req/day, primary reasoning), **Groq** (~14,400 req/day on 8B models, fast classification), **Cerebras** (~1M tokens/day, batch processing), and **OpenRouter** (~1,000 req/day with a $10 deposit, fallback). Tasks are routed to the cheapest provider that can handle them — simpler classification and filtering tasks use Groq 8B, token-heavy extraction uses Cerebras, and tasks requiring the best judgment use Gemini Flash. All providers are rate-limited, so the system needs pacing/backoff and automatic fallback to OpenRouter when a primary provider is exhausted.
 - Depth of research is configurable so cost and runtime can be controlled per run rather than fixed.
