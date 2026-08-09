@@ -44,6 +44,8 @@ class ParsedIdea(BaseModel):
     key_features: list[str]               # what the user described wanting to build
     competitor_search_terms: list[str]     # queries for finding competitors
     pain_point_search_terms: list[str]    # queries for finding complaints
+    target_country_code: str = "us"       # ISO 3166-1 alpha-2 country code for app stores
+    target_communities: list[str] = []    # dynamic communities to search (e.g. reddit.com, quora.com)
 
 
 class SourceEntry(TypedDict):

@@ -8,6 +8,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+from src.config.settings import get_settings
 from src.graph.state import CompetitorCandidate, PainPointCandidate, ParsedIdea, ResearchState
 from src.prompts.relevance_filter import build_competitor_messages, build_pain_point_messages
 from src.utils.llm_client import LLMClient
@@ -74,10 +75,9 @@ def competitor_relevance_filter(state: ResearchState) -> dict:
 
     parsed_idea = state["parsed_idea"]
     idea_summary = format_idea_summary(parsed_idea)  # type: ignore
-    depth = state.get("depth", "fast")
-
-    # Cap from ARCHITECTURE.md Section 8: Stage 2 gets 3 (fast) or 5 (deep) competitors
-    max_output = 3 if depth == "fast" else 5
+    settings = get_settings()
+    depth = state.get("depth", settings.default_depth)
+    max_output = settings.max_competitors_fast if depth == "fast" else settings.max_competitors_deep
 
     client = LLMClient()
     all_results = []

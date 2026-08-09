@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 def fetch_and_clean_page(url: str) -> str:
     """Fetch a web page and clean it using readability and BeautifulSoup."""
     try:
-        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+        settings = get_settings()
+        with httpx.Client(timeout=settings.http_timeout, follow_redirects=True) as client:
             # Simple User-Agent to avoid some basic blocks
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             response = client.get(url, headers=headers)
@@ -45,22 +46,21 @@ def fetch_and_clean_page(url: str) -> str:
             soup = BeautifulSoup(clean_html, "html.parser")
             text = soup.get_text(separator="\n", strip=True)
 
-            # Hard token cap safety net (approximate by chars: 4K tokens ~= 16K chars)
-            # as per ARCHITECTURE.md Section 12
-            return text[:16000]
+            # Hard token cap safety net
+            return text[:settings.max_html_chars]
     except Exception as e:
         logger.warning("Failed to fetch %s: %s", url, e)
         return ""
 
 
-def fetch_google_play_reviews(app_name: str) -> list[dict]:
+def fetch_google_play_reviews(app_name: str, country: str = "us") -> list[dict]:
     """Search Google Play for the app and fetch 1-2 star reviews."""
     try:
         # Search for the app
         search_results = search(
             app_name,
             lang="en",
-            country="us",
+            country=country,
         )
         if not search_results:
             return []
@@ -68,20 +68,30 @@ def fetch_google_play_reviews(app_name: str) -> list[dict]:
         # Take the top result
         app_id = search_results[0]["appId"]
 
-        # Fetch reviews
-        result, _ = reviews(
+        # Fetch 1-star reviews
+        result_1, _ = reviews(
             app_id,
             lang='en',
-            country='us',
+            country=country,
             sort=Sort.NEWEST,
-            count=100,
-            filter_score_with=None  # Will filter manually to get strict 1-2 stars
+            count=10,
+            filter_score_with=1
+        )
+        # Fetch 2-star reviews
+        result_2, _ = reviews(
+            app_id,
+            lang='en',
+            country=country,
+            sort=Sort.NEWEST,
+            count=10,
+            filter_score_with=2
         )
 
-        # Filter for 1-2 stars and take top 10
+        all_results = result_1 + result_2
+        # Filter for 1-2 stars (sanity check) and take top 10
         negative_reviews = [
             {"score": r["score"], "content": r["content"], "store": "google_play"}
-            for r in result if r["score"] in (1, 2)
+            for r in all_results if r["score"] in (1, 2)
         ][:10]
 
         return negative_reviews
@@ -90,7 +100,7 @@ def fetch_google_play_reviews(app_name: str) -> list[dict]:
         return []
 
 
-def fetch_apple_app_store_reviews(app_store_id: str) -> list[dict]:
+def fetch_apple_app_store_reviews(app_store_id: str, country: str = "us") -> list[dict]:
     """Fetch 1-2 star reviews from Apple App Store via public RSS feed.
 
     See ARCHITECTURE.md Section 6: Apple RSS feed returns JSON, no auth required.
@@ -104,9 +114,10 @@ def fetch_apple_app_store_reviews(app_store_id: str) -> list[dict]:
     if not numeric_id.isdigit():
         return []
 
-    url = f"https://itunes.apple.com/rss/customerreviews/id={numeric_id}/sortby=mostrecent/json"
+    url = f"https://itunes.apple.com/{country}/rss/customerreviews/id={numeric_id}/sortby=mostrecent/json"
     try:
-        with httpx.Client(timeout=10.0) as client:
+        settings = get_settings()
+        with httpx.Client(timeout=settings.http_timeout) as client:
             response = client.get(url)
             response.raise_for_status()
             data = response.json()
@@ -200,7 +211,8 @@ def _format_idea_context(parsed_idea: ParsedIdea) -> str:
     return (
         f"Category: {parsed_idea.category}\n"
         f"Target User: {parsed_idea.target_user}\n"
-        f"Core Problem: {parsed_idea.core_problem}"
+        f"Core Problem: {parsed_idea.core_problem}\n"
+        f"Country Code: {parsed_idea.target_country_code}"
     )
 
 
@@ -243,10 +255,11 @@ def _process_competitor(
     # 3. Conditional app reviews — now with SRC_IDs
     app_reviews = []
     new_sources = {}
+    country_code = idea_context.split("Country Code: ")[-1].strip() if "Country Code: " in idea_context else "us"
 
     if has_app:
         # Google Play reviews
-        gplay_reviews = fetch_google_play_reviews(name)
+        gplay_reviews = fetch_google_play_reviews(name, country=country_code)
         for review in gplay_reviews:
             review_src_id = source_map.add(
                 url=f"https://play.google.com/store/apps (search: {name})",
@@ -261,7 +274,7 @@ def _process_competitor(
         # Apple App Store reviews (via RSS)
         apple_id = parsed.app_store_id
         if apple_id:
-            apple_reviews = fetch_apple_app_store_reviews(apple_id)
+            apple_reviews = fetch_apple_app_store_reviews(apple_id, country=country_code)
             for review in apple_reviews:
                 review_src_id = source_map.add(
                     url=f"https://apps.apple.com/app/id{apple_id.replace('id', '')}",

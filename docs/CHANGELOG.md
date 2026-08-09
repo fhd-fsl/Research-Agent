@@ -49,6 +49,19 @@ to the build sequence stages in `ARCHITECTURE.md`.
 
 ## [Unreleased]
 
+### Added
+- Created `src/api/main.py` containing a FastAPI application with a synchronous `/research` endpoint.
+- Completed Phase 2 of the Build Sequence: A thin API wrapper for local testing of the research graph.
+
+### Changed
+- Refactored `pain_point_miner.py` to dynamically search communities output by the LLM (`parsed_idea.target_communities`) rather than hardcoding Reddit and Hacker News.
+- Moved hardcoded limits (max competitors, HTML truncation, HTTP timeouts) into `src/config/settings.py` for easier configuration.
+
+### Fixed
+- Fixed app store reviews region hardcoding by extracting `target_country_code` in the idea parser and passing it to Google Play and Apple scrapers.
+- Fixed an issue where `gpt-4o-mini` would parrot the JSON Schema instead of populating it by rewriting the `schema_prompt` in `LLMClient`.
+- Fixed missing `get_settings` import in `relevance_filter.py`.
+
 ## [v0.2.0] - 2026-08-09
 
 ### Added

@@ -58,7 +58,7 @@ def _format_clusters_for_prompt(clusters: list[PainPointCluster]) -> str:
         lines.append(f'"{theme}" (Signal: {signal}, {count} sources)')
         lines.append(f"  {c.description}")
         for quote in c.representative_quotes:
-            lines.append(f"  - [{quote.get('src_id')}] \"{quote.get('quote')}\"")
+            lines.append(f"  - [{quote.get('src_id')}] '{quote.get('quote')}'")
         lines.append("")
     return "\n".join(lines)
 

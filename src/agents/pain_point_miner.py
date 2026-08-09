@@ -102,52 +102,23 @@ def pain_point_miner(state: ResearchState) -> dict:
         except Exception as e:
             logger.warning("Tavily general search failed for '%s': %s", query, e)
 
-    # 2. Tavily Reddit Search
-    for query in queries:
-        reddit_query = f"{query} site:reddit.com"
-        try:
-            response = tavily_client.search(
-                query=reddit_query,
-                search_depth="basic",
-                max_results=results_per_query,
-            )
-            for result in response.get("results", []):
-                add_candidate(
-                    result.get("url"), result.get("title", ""),
-                    result.get("content", ""), "reddit",
-                )
-        except Exception as e:
-            logger.warning("Tavily reddit search failed for '%s': %s", reddit_query, e)
-
-    # 3. Hacker News Algolia Search
-    with httpx.Client() as client:
+    # 2. Tavily Community Search
+    for community in getattr(parsed_idea, "target_communities", []):
         for query in queries:
+            community_query = f"{query} site:{community}"
             try:
-                hn_response = client.get(
-                    "https://hn.algolia.com/api/v1/search",
-                    params={"query": query, "hitsPerPage": results_per_query}
+                response = tavily_client.search(
+                    query=community_query,
+                    search_depth="basic",
+                    max_results=results_per_query,
                 )
-                hn_response.raise_for_status()
-                data = hn_response.json()
-
-                for hit in data.get("hits", []):
-                    # We prefer comment text since pain points are usually in discussions
-                    title = hit.get("title") or hit.get("story_title") or "Hacker News Comment"
-                    raw_snippet = hit.get("comment_text") or hit.get("story_text") or ""
-
-                    # Strip HTML tags — HN Algolia returns comment_text with <p>, <a>, etc.
-                    snippet = _strip_html(raw_snippet)
-
-                    url = (
-                        hit.get("url")
-                        or f"https://news.ycombinator.com/item?id={hit.get('objectID')}"
+                for result in response.get("results", []):
+                    add_candidate(
+                        result.get("url"), result.get("title", ""),
+                        result.get("content", ""), "web",
                     )
-
-                    if snippet:
-                        add_candidate(url, title, snippet[:500], "hn")
-
             except Exception as e:
-                logger.warning("HN search failed for '%s': %s", query, e)
+                logger.warning("Tavily community search failed for '%s': %s", community_query, e)
 
     # Truncate if we somehow exceeded max
     raw_candidates = raw_candidates[:max_total_candidates]
@@ -157,6 +128,6 @@ def pain_point_miner(state: ResearchState) -> dict:
         "source_map": new_sources,
         "progress_messages": [
             f"Found {len(raw_candidates)} pain point candidates "
-            f"across Web, Reddit, and HN."
+            f"across Web and dynamic communities."
         ],
     }

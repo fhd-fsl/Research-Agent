@@ -158,8 +158,10 @@ class LLMClient:
             schema = response_model.model_json_schema()
             schema_prompt = (
                 f"\n\nCRITICAL INSTRUCTION: You MUST return your answer as a valid JSON object. "
-                f"Your JSON object MUST exactly match the following JSON Schema structure.\n"
-                f"DO NOT return the JSON Schema itself. Return the DATA that matches the schema.\n"
+                f"You are given a JSON Schema below. DO NOT return the JSON Schema itself. "
+                f"Instead, you must return a valid JSON data object that MATCHES this schema.\n\n"
+                f"Example: If the schema expects {{'name': 'string'}}, you return {{'name': 'John'}}\n\n"
+                f"Target JSON Schema:\n"
                 f"{json.dumps(schema, indent=2)}"
             )
             # Append schema instructions to the last message (typically user)
