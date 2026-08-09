@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # --- Research Defaults ---
     default_depth: Literal["fast", "deep"] = "fast"
     http_timeout: float = 10.0
-    max_html_chars: int = 16000
+    max_html_chars: int = 32000
     max_competitors_fast: int = 3
     max_competitors_deep: int = 5
     target_cluster_count: str = "4-7"

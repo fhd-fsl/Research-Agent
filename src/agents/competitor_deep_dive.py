@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 from google_play_scraper import Sort, reviews, search
 from readability import Document
 from tavily import TavilyClient
+from urllib.parse import urljoin, urlparse
 
 from src.config.settings import get_settings
 from src.graph.state import CompetitorProfile, ParsedIdea, ResearchState
@@ -29,25 +30,72 @@ from src.utils.llm_client import LLMClient
 logger = logging.getLogger(__name__)
 
 
-def fetch_and_clean_page(url: str) -> str:
-    """Fetch a web page and clean it using readability and BeautifulSoup."""
+def fetch_and_clean_page(url: str, llm_client: LLMClient | None = None) -> str:
+    """Fetch a web page, optionally spider subpages using LLM, and clean using readability."""
     try:
         settings = get_settings()
         with httpx.Client(timeout=settings.http_timeout, follow_redirects=True) as client:
-            # Simple User-Agent to avoid some basic blocks
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             response = client.get(url, headers=headers)
             response.raise_for_status()
 
             doc = Document(response.text)
             clean_html = doc.summary()
-
-            # Strip remaining HTML tags
             soup = BeautifulSoup(clean_html, "html.parser")
-            text = soup.get_text(separator="\n", strip=True)
+            main_text = soup.get_text(separator="\n", strip=True)
 
-            # Hard token cap safety net
-            return text[:settings.max_html_chars]
+            subpage_texts = []
+            if llm_client:
+                orig_soup = BeautifulSoup(response.text, "html.parser")
+                links = []
+                for a in orig_soup.find_all("a", href=True):
+                    href = a["href"]
+                    text = a.get_text(strip=True)
+                    if href and text and not href.startswith(("javascript:", "mailto:", "tel:")):
+                        full_url = urljoin(url, href)
+                        if urlparse(full_url).netloc == urlparse(url).netloc:
+                            links.append(f"{full_url} | {text}")
+                
+                # Deduplicate while preserving order
+                links = list(dict.fromkeys(links))
+                links_text = "\n".join(links[:100])
+                
+                if links_text:
+                    try:
+                        from src.prompts.subpage_navigator import build_messages as build_nav_messages
+                        
+                        class SubpageNavigationResult(BaseModel):
+                            urls: list[str]
+                            
+                        nav_response = llm_client.complete(
+                            task="subpage_navigation",
+                            messages=build_nav_messages(links_text),
+                            temperature=0.1,
+                            response_model=SubpageNavigationResult
+                        )
+                        urls_to_fetch = nav_response.parse_pydantic(SubpageNavigationResult).urls[:3]
+                        
+                        if urls_to_fetch:
+                            def fetch_subpage(sub_url: str) -> str:
+                                try:
+                                    sub_resp = client.get(sub_url, headers=headers)
+                                    sub_resp.raise_for_status()
+                                    sub_doc = Document(sub_resp.text)
+                                    sub_soup = BeautifulSoup(sub_doc.summary(), "html.parser")
+                                    return f"\n\n--- SUBPAGE: {sub_url} ---\n" + sub_soup.get_text(separator="\n", strip=True)
+                                except Exception:
+                                    return ""
+                                    
+                            with ThreadPoolExecutor(max_workers=3) as executor:
+                                futures = {executor.submit(fetch_subpage, u): u for u in urls_to_fetch}
+                                for future in as_completed(futures):
+                                    subpage_texts.append(future.result())
+                                    
+                    except Exception as e:
+                        logger.warning("Subpage navigation failed for %s: %s", url, e)
+
+            final_text = main_text + "".join(subpage_texts)
+            return final_text[:settings.max_html_chars]
     except Exception as e:
         logger.warning("Failed to fetch %s: %s", url, e)
         return ""
@@ -228,7 +276,7 @@ def _process_competitor(
     src_id = cand["candidate"]["src_id"]
 
     # 1. Fetch and clean
-    content = fetch_and_clean_page(url)
+    content = fetch_and_clean_page(url, llm_client=client)
     if not content:
         # Fallback to the snippet if full fetch fails
         content = cand["candidate"]["snippet"]

@@ -28,6 +28,7 @@ MODEL_FOR_TASK: dict[str, TaskModelConfig] = {
     "pain_point_clustering": TaskModelConfig(provider="groq",     model="llama-3.1-8b-instant"),
     "gap_synthesis":         TaskModelConfig(provider="gemini",   model="gemini-2.0-flash"),
     "report_formatting":     TaskModelConfig(provider="groq",     model="llama-3.1-8b-instant"),
+    "subpage_navigation":    TaskModelConfig(provider="groq",     model="llama-3.1-8b-instant"),
 }
 
 # Fallback provider when the primary returns 429 or is unavailable
