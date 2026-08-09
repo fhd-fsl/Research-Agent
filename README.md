@@ -47,21 +47,33 @@ python -m src.main "I want to build an HR automation system..." --depth deep
 
 The system will stream logs to the console as the LangGraph agents execute. Upon completion, a `Report.md` file will be generated in the root directory.
 
-### Running via API (FastAPI)
+### Running via API (FastAPI) and Background Worker
 
-You can also run the agent via a synchronous HTTP API.
+The system uses an asynchronous job architecture. You need to run both the API server and the background worker process.
 
-1. Start the FastAPI server:
+1. Start the FastAPI server in one terminal:
    ```bash
    uvicorn src.api.main:app --reload
    ```
-2. Trigger a research job using `curl` (warning: this will block for a few minutes while the agents run):
+
+2. Start the background worker in a second terminal:
+   ```bash
+   python -m src.worker.main
+   ```
+
+3. Submit a research job using `curl`:
    ```bash
    curl -X POST http://127.0.0.1:8000/research \
      -H "Content-Type: application/json" \
      -d '{"idea": "A CRM for pet sitters", "depth": "fast"}'
    ```
-3. The response will be a JSON object containing the `job_id`, `report_markdown`, and a fully structured `report_json`.
+   *This will instantly return a `202 Accepted` response with a `job_id`.*
+
+4. Poll for status and progress messages using the `job_id`:
+   ```bash
+   curl http://127.0.0.1:8000/research/job_abcd1234
+   ```
+   *The response will include `status` (pending, running, completed, failed), real-time `progress_messages`, and the final `result` object once completed.*
 
 ## Documentation
 

@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     max_competitors_fast: int = 3
     max_competitors_deep: int = 5
 
+    # --- Storage ---
+    db_path: str = "jobs.db"
+
     # --- Logging ---
     log_level: str = "INFO"
 

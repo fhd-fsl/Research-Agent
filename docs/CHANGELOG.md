@@ -52,15 +52,23 @@ to the build sequence stages in `ARCHITECTURE.md`.
 ### Added
 - Created `src/api/main.py` containing a FastAPI application with a synchronous `/research` endpoint.
 - Completed Phase 2 of the Build Sequence: A thin API wrapper for local testing of the research graph.
+- Completed Phase 3 of the Build Sequence: Asynchronous Job Worker pattern.
+- Created `src/worker/main.py` containing a standalone polling worker process that consumes background research jobs.
+- Implemented SQLite `jobs.db` database and `src/db/job_store.py` for atomic job queueing, state tracking, and storing serialized Pydantic result models.
+- Updated `README.md` to document the new decoupled FastAPI and Worker process architecture.
 
 ### Changed
 - Refactored `pain_point_miner.py` to dynamically search communities output by the LLM (`parsed_idea.target_communities`) rather than hardcoding Reddit and Hacker News.
 - Moved hardcoded limits (max competitors, HTML truncation, HTTP timeouts) into `src/config/settings.py` for easier configuration.
+- Centralized database path config into `settings.py`.
+- Refactored `/research` API endpoint in `src/api/main.py` to be asynchronous, immediately returning a `202 Accepted` and offloading processing to the database queue.
+- Added `GET /research/{job_id}` endpoint to allow polling for real-time progress messages and the final report.
 
 ### Fixed
-- Fixed app store reviews region hardcoding by extracting `target_country_code` in the idea parser and passing it to Google Play and Apple scrapers.
-- Fixed an issue where `gpt-4o-mini` would parrot the JSON Schema instead of populating it by rewriting the `schema_prompt` in `LLMClient`.
-- Fixed missing `get_settings` import in `relevance_filter.py`.
+- Fixed `NameError` in `relevance_filter.py` by adding missing `get_settings` import.
+- Fixed schema parroting bug in `LLMClient` where fallback logic lost the strict Pydantic JSON schema format.
+- Fixed region hardcoding in scrapers to respect `parsed_idea.target_country_code`.
+- Fixed JSON serialization crashes in the worker by explicitly dumping Pydantic models (e.g. `ParsedIdea`) via `.model_dump()` before saving to SQLite.
 
 ## [v0.2.0] - 2026-08-09
 
