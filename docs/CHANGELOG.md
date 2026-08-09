@@ -49,6 +49,30 @@ to the build sequence stages in `ARCHITECTURE.md`.
 
 ## [Unreleased]
 
+## [v0.2.0] - 2026-08-09
+
+### Added
+- Implemented the complete 9-node LangGraph execution pipeline (`src/graph/build_graph.py`) with parallel fan-out and fan-in routing.
+- Built the `LLMClient` (`src/utils/llm_client.py`) with automatic multi-provider routing (Gemini, Groq, Cerebras) and OpenRouter fallback on quota exhaustion.
+- Implemented the `SourceMap` utility to deterministically track and resolve `[SRC_XXXX]` citations from raw search results to the final markdown report.
+- Developed the 9 core agent nodes (`src/agents/`) and their associated prompts (`src/prompts/`) for end-to-end autonomous execution.
+- Added automated `tenacity` retries for rate limits and connection errors across all API calls.
+
+### Changed
+- Migrated data structures (`ParsedIdea`, `CompetitorProfile`, `Gap`, `PainPointCluster`) from `TypedDict` to Pydantic `BaseModel` to fix structured output validation errors.
+- Updated `LLMClient` to strictly enforce Pydantic structured output using JSON Schema injection and robust regex parsing.
+- Reduced `max_workers` from 5 to 2 in `relevance_filter.py` and `competitor_deep_dive.py` to prevent 429 RateLimitErrors on Groq/Gemini free tiers.
+- Switched Cerebras provider from `llama-3.3-70b` to `gemma-4-31b` to align with free tier availability.
+- Updated `report_builder` prompt to prevent hallucinatory empty headers (e.g., "Moderate Signals") when no data is present.
+- Enforced strict citation formatting in `report_builder` to prevent the LLM from inventing fake `[1](url)` tags, ensuring the `SourceMap` successfully resolves `[SRC_XXXX]` tags.
+
+### Fixed
+- Fixed `NameError` in `LLMClient` OpenRouter fallback logic when referencing the primary model name.
+- Fixed 400 Bad Request errors from OpenRouter by updating the fallback mapping to use `openai/gpt-4o-mini` when Gemini rate limits are hit.
+- Fixed `301 Moved Permanently` errors during Hacker News searches by switching the Algolia API URL from `http://` to `https://` in `pain_point_miner.py`.
+
+## [v0.1.0] - 2026-08-07
+
 ### Added
 - Project documentation: `PROBLEM_BRIEF.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`, `CHANGELOG.md`
 - Designed 9-node LangGraph agent pipeline with parallel competitor/pain-point branches

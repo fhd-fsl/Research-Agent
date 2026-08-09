@@ -78,7 +78,7 @@ graph TD
 | `pain_point_miner` | `parsed_idea.pain_point_search_terms` | `raw_pain_point_candidates`: results from Tavily (general + `site:reddit.com`) and HN Algolia | — (API calls) | — |
 | `competitor_relevance_filter` | `raw_competitor_candidates` + `parsed_idea` | `filtered_competitors`: top N relevant candidates with YES/NO/MAYBE + reasoning | Groq | llama-3.1-8b |
 | `pain_point_relevance_filter` | `raw_pain_point_candidates` + `parsed_idea` | `filtered_pain_points`: relevant complaints/discussions | Groq | llama-3.1-8b |
-| `competitor_deep_dive` | `filtered_competitors` (full page fetch) | `competitor_profiles`: pricing, features, positioning, weaknesses per competitor | Cerebras | llama-3.3-70b |
+| `competitor_deep_dive` | `filtered_competitors` (full page fetch) | `competitor_profiles`: pricing, features, positioning, weaknesses per competitor | Cerebras | gemma-4-31b |
 | `pain_point_clusterer` | `filtered_pain_points` | `pain_point_clusters`: grouped themes with source counts and signal strength | Groq | llama-3.1-8b |
 | `gap_synthesizer` | `competitor_profiles` + `pain_point_clusters` + `parsed_idea` | `gaps[]` with evidence + `landscape_summary` | Gemini Flash | gemini-2.0-flash |
 | `report_builder` | All synthesis output + `source_map` | `report`: final formatted report with resolved URLs | Groq | llama-3.1-8b |
@@ -86,7 +86,7 @@ graph TD
 **Provider assignment rationale:**
 - **Gemini Flash** for the two tasks requiring the best judgment: idea parsing (sets up everything downstream — a bad parse cascades) and gap synthesis (the core value of the product).
 - **Groq 8B** for high-volume, simpler tasks: relevance filtering (YES/NO classification), clustering (categorization), report formatting (template-based).
-- **Cerebras** for competitor deep dive — this is the token-heaviest step (processing full web pages), and Cerebras' 1M tokens/day budget handles it well.
+- **Cerebras** for competitor deep dive — this is the token-heaviest step (processing full web pages), and Cerebras' 1M tokens/day budget handles it well. (Using `gemma-4-31b`)
 - **OpenRouter** as fallback when any provider is rate-limited or down.
 
 ---
@@ -296,8 +296,9 @@ All data passed between agent nodes flows through this typed state object. No gl
 
 ```python
 from typing import TypedDict, Literal
+from pydantic import BaseModel
 
-class ParsedIdea(TypedDict):
+class ParsedIdea(BaseModel):
     category: str                    # e.g. "project management", "note-taking"
     target_user: str                 # e.g. "solo founders", "small dev teams"
     core_problem: str                # one-sentence problem statement
@@ -318,7 +319,7 @@ class CompetitorCandidate(TypedDict):
     relevance_score: float           # 0-1, from Stage 1 filter
     relevance_reasoning: str
 
-class CompetitorProfile(TypedDict):
+class CompetitorProfile(BaseModel):
     src_ids: list[str]               # multiple sources may inform one profile
     name: str
     url: str
@@ -335,7 +336,7 @@ class PainPointCandidate(TypedDict):
     relevance_score: float
     relevance_reasoning: str
 
-class PainPointCluster(TypedDict):
+class PainPointCluster(BaseModel):
     theme: str                       # e.g. "pricing complaints", "missing offline support"
     description: str
     source_count: int                # number of independent sources
@@ -343,7 +344,7 @@ class PainPointCluster(TypedDict):
     representative_quotes: list[dict]  # [{"src_id": str, "quote": str}]
     signal_strength: Literal["strong", "moderate", "weak"]
 
-class Gap(TypedDict):
+class Gap(BaseModel):
     title: str
     description: str
     confidence: Literal["strong", "moderate", "weak"]
@@ -398,7 +399,7 @@ class ResearchState(TypedDict):
 | Agent orchestration | LangGraph | Explicit state, conditional/branching graphs, parallel fan-out, checkpointing |
 | LLM (reasoning) | Gemini Flash (via Google AI API) | 1,500 req/day free, strong reasoning for parsing and synthesis |
 | LLM (classification) | Groq (Llama 3.1 8B) | 14,400 req/day free, fast inference for filtering/clustering |
-| LLM (batch processing) | Cerebras (Llama 3.3 70B) | 1M tokens/day free, handles token-heavy competitor page extraction |
+| LLM (batch processing) | Cerebras (gemma-4-31b) | 1M tokens/day free, handles token-heavy competitor page extraction |
 | LLM (fallback) | OpenRouter ($10 deposit) | 1,000 req/day across 28+ models, absorbs overflow from other providers |
 | Search | Tavily | Built for LLM use, returns clean snippets, ~1,000 queries/month free |
 | HN data | Algolia HN Search API | Free, no key required, well-documented |
