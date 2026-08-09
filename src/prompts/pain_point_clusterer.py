@@ -1,9 +1,11 @@
 """Prompts for the pain point clusterer node."""
 
+from src.config.settings import get_settings
+
 SYSTEM_PROMPT = """You are an expert product researcher. Your job is to analyze a list of user pain points, complaints, and frustrations, and group them into distinct themes.
 
 You will be given a list of pain points. Each pain point is tagged with a [SRC_ID].
-You must deduplicate and group these into 4-7 overarching clusters.
+You must deduplicate and group these into {cluster_count} overarching clusters.
 
 You will output a JSON object matching this schema exactly:
 {
@@ -32,7 +34,9 @@ Rules:
 
 def build_messages(pain_points_text: str) -> list[dict[str, str]]:
     """Build the messages for the pain point clustering LLM call."""
+    settings = get_settings()
+    prompt = SYSTEM_PROMPT.format(cluster_count=settings.target_cluster_count)
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": prompt},
         {"role": "user", "content": f"PAIN POINTS:\n{pain_points_text}"},
     ]

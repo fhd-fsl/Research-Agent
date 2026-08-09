@@ -49,6 +49,10 @@ to the build sequence stages in `ARCHITECTURE.md`.
 
 ## [Unreleased]
 
+---
+
+## [v0.3.0] - 2026-08-10
+
 ### Added
 - Created `src/api/main.py` containing a FastAPI application with a synchronous `/research` endpoint.
 - Completed Phase 2 of the Build Sequence: A thin API wrapper for local testing of the research graph.

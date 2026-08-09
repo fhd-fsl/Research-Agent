@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     max_html_chars: int = 16000
     max_competitors_fast: int = 3
     max_competitors_deep: int = 5
+    target_cluster_count: str = "4-7"
 
     # --- Storage ---
     db_path: str = "jobs.db"
