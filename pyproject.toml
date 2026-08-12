@@ -19,6 +19,7 @@ dependencies = [
     "uvicorn>=0.30",
     "langchain-core>=0.2",
     "langchain-openai>=0.1",
+    "langgraph-checkpoint-sqlite>=2.0",
 ]
 
 [project.optional-dependencies]

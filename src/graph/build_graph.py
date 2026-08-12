@@ -4,6 +4,7 @@ Wires the agent nodes together into a StateGraph, implementing the topology
 defined in the Multi-Agent Orchestrator Plan.
 """
 
+from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from src.agents.orchestrator import orchestrator_node
@@ -23,7 +24,7 @@ def route_orchestrator(state: ResearchState) -> str:
     return next_agent
 
 
-def build_graph() -> StateGraph:
+def build_graph(checkpointer: Any = None) -> StateGraph:
     """Build and compile the research agent graph."""
     builder = StateGraph(ResearchState)
 
@@ -50,4 +51,4 @@ def build_graph() -> StateGraph:
     builder.add_edge("thinker", "orchestrator")
     builder.add_edge("writer", "orchestrator")
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)

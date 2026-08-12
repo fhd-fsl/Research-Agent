@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 
 from src.config.settings import get_settings
-from src.db.job_store import create_job, get_job, init_db
+from src.db.job_store import create_job, get_job, init_db, update_job_status
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def run_research(request: ResearchRequest):
         return JobSubmitResponse(
             job_id=job_id,
             status="pending",
-            message="Job submitted successfully. Poll GET /research/{job_id} for status."
+            message="Job submitted successfully. To poll for status: GET /research/{job_id} | To cancel: DELETE /research/{job_id}"
         )
 
     except Exception as e:
@@ -86,3 +86,17 @@ def get_job_status(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
         
     return job
+
+
+@app.delete("/research/{job_id}")
+def cancel_job(job_id: str):
+    """Cancel a pending or running job."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    if job["status"] in ["completed", "failed"]:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel job in status: {job['status']}")
+        
+    update_job_status(job_id, "cancelled")
+    return {"status": "cancelled", "message": f"Job {job_id} cancelled successfully."}

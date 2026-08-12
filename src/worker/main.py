@@ -4,8 +4,10 @@ import logging
 import time
 from typing import Any
 
+from langgraph.checkpoint.sqlite import SqliteSaver
+
 from src.config.settings import get_settings
-from src.db.job_store import append_progress, claim_pending_job, init_db, update_job_status
+from src.db.job_store import append_progress, claim_pending_job, init_db, update_job_status, get_job
 from src.graph.build_graph import build_graph
 from src.graph.state import create_initial_state
 
@@ -22,29 +24,45 @@ def process_job(job: dict[str, Any]):
     update_job_status(job_id, "running")
 
     try:
-        # Initialize state
-        state = create_initial_state(raw_idea=raw_idea, depth=depth)
+        config = {"configurable": {"thread_id": job_id}}
+        settings = get_settings()
         
-        # Override the random job_id from create_initial_state with our actual DB job_id
-        state["job_id"] = job_id 
-        
-        graph = build_graph()
-        
-        # Stream the graph execution so we can catch intermediate progress updates
-        final_state = state
-        for update in graph.stream(state):
-            # The update is a dict where keys are node names and values are state diffs
-            for node_name, state_diff in update.items():
-                logger.info("Job %s finished node: %s", job_id, node_name)
+        with SqliteSaver.from_conn_string(settings.db_path) as checkpointer:
+            graph = build_graph(checkpointer=checkpointer)
+            
+            # Check if there is already a checkpoint for this job
+            checkpoint_tuple = checkpointer.get_tuple(config)
+            
+            if checkpoint_tuple:
+                logger.info("Resuming job %s from existing checkpoint", job_id)
+                stream_input = None
+            else:
+                logger.info("Starting fresh for job %s", job_id)
+                state = create_initial_state(raw_idea=raw_idea, depth=depth)
+                state["job_id"] = job_id 
+                stream_input = state
+            
+            # Stream the graph execution so we can catch intermediate progress updates
+            for update in graph.stream(stream_input, config=config):
                 
-                # Check if this node added any progress messages
-                if "progress_messages" in state_diff and state_diff["progress_messages"]:
-                    append_progress(job_id, state_diff["progress_messages"])
+                # Check if job was cancelled by a user via the API
+                current_job = get_job(job_id)
+                if current_job and current_job["status"] == "cancelled":
+                    logger.info("Job %s was cancelled by user. Stopping execution.", job_id)
+                    return
                     
-                # Keep accumulating the final state
-                final_state.update(state_diff)
-                
-        logger.info("Job %s completed successfully", job_id)
+                # The update is a dict where keys are node names and values are state diffs
+                for node_name, state_diff in update.items():
+                    logger.info("Job %s finished node: %s", job_id, node_name)
+                    
+                    # Check if this node added any progress messages
+                    if "progress_messages" in state_diff and state_diff["progress_messages"]:
+                        append_progress(job_id, state_diff["progress_messages"])
+                        
+            # Get the final fully reduced state accurately from the graph
+            final_state = graph.get_state(config).values
+            
+            logger.info("Job %s completed successfully", job_id)
         
         parsed_idea = final_state.get("parsed_idea")
         competitor_profiles = final_state.get("competitor_profiles", [])

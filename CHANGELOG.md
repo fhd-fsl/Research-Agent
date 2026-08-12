@@ -50,6 +50,9 @@ to the build sequence stages in `ARCHITECTURE.md`.
 ## [Unreleased]
 
 ### Added
+- Added `langgraph-checkpoint-sqlite` integration to `src/worker/main.py`. The worker now uses `SqliteSaver` to persist graph state between nodes, allowing jobs to seamlessly resume from exactly where they left off if a worker crashes.
+- Added `DELETE /research/{job_id}` endpoint to `src/api/main.py` allowing users to cancel pending or running jobs.
+- Added active polling in the `graph.stream()` execution loop inside `src/worker/main.py` so that workers instantly drop cancelled jobs mid-flight.
 - Added new agent tools `read_webpage` and `get_app_store_reviews` to replace rigid, single-purpose scraping nodes.
 - Added explicit HTTP timeouts (`timeout=settings.http_timeout`) to LangChain `ChatOpenAI` wrapper in `langchain_models.py` to prevent infinite hanging when OpenRouter connections stall.
 
@@ -61,6 +64,7 @@ to the build sequence stages in `ARCHITECTURE.md`.
 - Changed `gaps` state append logic from `operator.add` to simple overwrite in `state.py` to prevent holistic state bloating.
 
 ### Fixed
+- Fixed stranded job issue by updating `claim_pending_job` in `src/db/job_store.py` to automatically detect and claim "stale" jobs (jobs marked as `running` whose `updated_at` timestamp is older than 15 minutes).
 - Fixed data loss bug (URL tracking collision) in `orchestrator.py`, `deep_diver.py`, and `pain_diver.py` by transitioning from `processed_urls` to `processed_candidates` (tracking by unique `src_id`).
 - Fixed `'ChatPromptTemplate' object has no attribute 'to_messages'` runtime error across all agents by migrating invocation logic to `.format_messages()`.
 - Fixed missing key bug in `report_builder.py` by switching from `parsed_idea` to `raw_idea`.

@@ -55,12 +55,18 @@ def get_job(job_id: str) -> dict[str, Any] | None:
 
 
 def claim_pending_job() -> dict[str, Any] | None:
-    """Fetch the oldest pending job and atomically mark it as running."""
+    """Fetch the oldest pending job (or stale running job) and atomically mark it as running."""
     with sqlite3.connect(get_settings().db_path) as conn:
         conn.row_factory = sqlite3.Row
-        # Find the oldest pending job
+        # Find the oldest pending job, or a running job that hasn't been updated in 15 minutes
         cursor = conn.execute(
-            "SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1"
+            """
+            SELECT * FROM jobs 
+            WHERE status = 'pending' 
+               OR (status = 'running' AND updated_at < datetime('now', '-15 minutes'))
+            ORDER BY created_at ASC 
+            LIMIT 1
+            """
         )
         row = cursor.fetchone()
         if not row:
@@ -68,8 +74,8 @@ def claim_pending_job() -> dict[str, Any] | None:
             
         # Attempt to claim it atomically
         cursor = conn.execute(
-            "UPDATE jobs SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE job_id = ? AND status = 'pending'",
-            (row["job_id"],)
+            "UPDATE jobs SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE job_id = ? AND status = ?",
+            (row["job_id"], row["status"])
         )
         
         # If rowcount is 0, another worker grabbed it between our SELECT and UPDATE
