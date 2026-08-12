@@ -48,15 +48,15 @@ def process_job(job: dict[str, Any]):
         
         parsed_idea = final_state.get("parsed_idea")
         competitor_profiles = final_state.get("competitor_profiles", [])
-        pain_point_clusters = final_state.get("pain_point_clusters", [])
+        pain_points = final_state.get("raw_pain_point_candidates", [])
         gaps = final_state.get("gaps", [])
         
         report_json = {
-            "idea": parsed_idea.model_dump() if parsed_idea else None,
+            "idea": parsed_idea.model_dump() if hasattr(parsed_idea, "model_dump") else parsed_idea,
             "landscape_summary": final_state.get("landscape_summary", ""),
-            "competitor_profiles": [c.model_dump() for c in competitor_profiles] if competitor_profiles else [],
-            "pain_point_clusters": [p.model_dump() for p in pain_point_clusters] if pain_point_clusters else [],
-            "gaps": [g.model_dump() for g in gaps] if gaps else [],
+            "competitor_profiles": [c.model_dump() if hasattr(c, "model_dump") else c for c in competitor_profiles] if competitor_profiles else [],
+            "pain_points": pain_points,
+            "gaps": [g.model_dump() if hasattr(g, "model_dump") else g for g in gaps] if gaps else [],
             "positioning_suggestions": final_state.get("positioning_suggestions", []),
             "sources": final_state.get("source_map", {}),
         }

@@ -17,6 +17,8 @@ dependencies = [
     "readability-lxml>=0.8",
     "fastapi>=0.100",
     "uvicorn>=0.30",
+    "langchain-core>=0.2",
+    "langchain-openai>=0.1",
 ]
 
 [project.optional-dependencies]

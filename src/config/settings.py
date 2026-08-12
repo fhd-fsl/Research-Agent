@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     )
 
     # --- LLM Provider API Keys ---
-    gemini_api_key: str = ""
+    # openrouter_api_key can be a single key, or multiple keys separated by commas (e.g. "key1,key2").
+    # If multiple keys are provided, the system will automatically rotate/fallback if a key hits rate limits.
     groq_api_key: str = ""
-    cerebras_api_key: str = ""
     openrouter_api_key: str = ""
 
     # --- Search API Keys ---
@@ -36,7 +36,17 @@ class Settings(BaseSettings):
     max_html_chars: int = 32000
     max_competitors_fast: int = 3
     max_competitors_deep: int = 5
+    max_pain_points_fast: int = 3
+    max_pain_points_deep: int = 5
     target_cluster_count: str = "4-7"
+    
+    # --- Tool Defaults ---
+    search_max_results: int = 5
+    web_max_internal_links: int = 30
+    app_store_filter_stars: list[int] = [1, 2]
+    
+    # --- LLM Settings ---
+    report_temperature: float = 0.2
 
     # --- Storage ---
     db_path: str = "jobs.db"

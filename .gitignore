@@ -27,3 +27,8 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated data
+*.db
+Report.md
+report.md

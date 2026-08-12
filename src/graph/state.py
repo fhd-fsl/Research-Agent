@@ -36,18 +36,6 @@ def merge_token_usage(existing: dict[str, int], update: dict[str, int]) -> dict[
 # Sub-structures stored as state field values
 # ---------------------------------------------------------------------------
 
-class ParsedIdea(BaseModel):
-    """Structured output from the idea_parser node."""
-    category: str                         # e.g. "project management", "note-taking"
-    target_user: str                      # e.g. "solo founders", "small dev teams"
-    core_problem: str                     # one-sentence problem statement
-    key_features: list[str]               # what the user described wanting to build
-    competitor_search_terms: list[str]     # queries for finding competitors
-    pain_point_search_terms: list[str]    # queries for finding complaints
-    target_country_code: str = "us"       # ISO 3166-1 alpha-2 country code for app stores
-    target_communities: list[str] = []    # dynamic communities to search (e.g. reddit.com, quora.com)
-
-
 class SourceEntry(TypedDict):
     """A single entry in the source map. Created at ingestion time only."""
     url: str
@@ -55,14 +43,6 @@ class SourceEntry(TypedDict):
     snippet: str
     source_type: Literal["web", "reddit", "hn", "app_store"]
     fetched_at: str                       # ISO 8601 timestamp
-
-
-class CompetitorCandidate(TypedDict):
-    """A competitor that passed Stage 1 relevance filtering."""
-    src_id: str
-    name: str
-    relevance_score: float                # 0.0–1.0 from Stage 1 filter
-    relevance_reasoning: str
 
 
 class CompetitorProfile(BaseModel):
@@ -77,23 +57,13 @@ class CompetitorProfile(BaseModel):
     has_mobile_app: bool
     app_store_reviews: list[dict[str, Any]] = Field(default_factory=list)  # 1-2 star reviews if app exists
 
-
-class PainPointCandidate(TypedDict):
-    """A pain point that passed Stage 1 relevance filtering."""
+class PainPointProfile(BaseModel):
+    """Deep-dive output for a single pain point URL."""
     src_id: str
-    text: str
-    relevance_score: float
-    relevance_reasoning: str
-
-
-class PainPointCluster(BaseModel):
-    """A group of related pain points, output from the clustering node."""
-    theme: str                            # e.g. "pricing complaints"
-    description: str
-    source_count: int                     # number of independent sources
-    source_diversity: list[str]           # e.g. ["reddit", "hn", "web"]
-    representative_quotes: list[dict[str, str]]  # [{"src_id": ..., "quote": ...}]
-    signal_strength: Literal["strong", "moderate", "weak"]
+    url: str
+    core_problem: str
+    detailed_frustrations: list[str]
+    representative_quotes: list[str]
 
 
 class Gap(BaseModel):
@@ -126,21 +96,19 @@ class ResearchState(TypedDict):
     raw_idea: str
     depth: Literal["fast", "deep"]
 
-    # --- Parsed (set by idea_parser) ---
-    parsed_idea: ParsedIdea | None
-
     # --- Source Map (grows across all ingestion nodes) ---
     source_map: Annotated[dict[str, SourceEntry], merge_dicts]
 
     # --- Competitor branch ---
-    raw_competitor_candidates: list[dict[str, Any]]
-    filtered_competitors: list[CompetitorCandidate]
-    competitor_profiles: list[CompetitorProfile]
+    raw_competitor_candidates: Annotated[list[dict[str, Any]], operator.add]
+    competitor_profiles: Annotated[list[CompetitorProfile], operator.add]
 
     # --- Pain point branch ---
-    raw_pain_point_candidates: list[dict[str, Any]]
-    filtered_pain_points: list[PainPointCandidate]
-    pain_point_clusters: list[PainPointCluster]
+    raw_pain_point_candidates: Annotated[list[dict[str, Any]], operator.add]
+    pain_point_profiles: Annotated[list[PainPointProfile], operator.add]
+
+    # --- State Tracking ---
+    processed_candidates: Annotated[list[str], operator.add]
 
     # --- Synthesis output ---
     gaps: list[Gap]
@@ -157,6 +125,8 @@ class ResearchState(TypedDict):
     progress_messages: Annotated[list[str], operator.add]
     errors: Annotated[list[str], operator.add]
     token_usage: Annotated[dict[str, int], merge_token_usage]
+    next_agent: str
+    current_strategy: str
 
 
 def create_initial_state(
@@ -168,14 +138,12 @@ def create_initial_state(
     return ResearchState(
         raw_idea=raw_idea,
         depth=depth,
-        parsed_idea=None,
         source_map={},
         raw_competitor_candidates=[],
-        filtered_competitors=[],
         competitor_profiles=[],
         raw_pain_point_candidates=[],
-        filtered_pain_points=[],
-        pain_point_clusters=[],
+        pain_point_profiles=[],
+        processed_urls=[],
         gaps=[],
         landscape_summary="",
         positioning_suggestions=[],
@@ -186,4 +154,6 @@ def create_initial_state(
         progress_messages=[],
         errors=[],
         token_usage={},
+        next_agent="searcher",
+        current_strategy="",
     )

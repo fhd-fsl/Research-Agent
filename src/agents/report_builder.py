@@ -8,10 +8,12 @@ into real URLs using the SourceMap, as per ARCHITECTURE.md Section 4.
 import logging
 import re
 
-from src.graph.state import CompetitorProfile, Gap, PainPointCluster, ResearchState
+from src.graph.state import CompetitorProfile, Gap, ResearchState
 from src.ingestion.source_map import SourceMap
-from src.prompts.report_builder import build_messages
-from src.utils.llm_client import LLMClient
+from src.prompts.report_builder import build_report_prompt
+from src.utils.langchain_models import get_chat_model
+from langchain_core.messages import SystemMessage
+from src.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,69 +50,60 @@ def _format_competitors_for_prompt(profiles: list[CompetitorProfile]) -> str:
     return "\n".join(lines)
 
 
-def _format_clusters_for_prompt(clusters: list[PainPointCluster]) -> str:
-    """Format pain point clusters for inclusion in the report prompt."""
+def _format_pain_points_for_prompt(pain_points: list[dict]) -> str:
+    """Format pain points for inclusion in the report prompt."""
     lines = []
-    for c in clusters:
-        theme = c.theme
-        signal = c.signal_strength
-        count = c.source_count
-        lines.append(f'"{theme}" (Signal: {signal}, {count} sources)')
-        lines.append(f"  {c.description}")
-        for quote in c.representative_quotes:
-            lines.append(f"  - [{quote.get('src_id')}] '{quote.get('quote')}'")
-        lines.append("")
+    for p in pain_points:
+        cand = p.get("candidate", {})
+        src_id = cand.get("src_id", "UNKNOWN")
+        text = cand.get("text", "")
+        lines.append(f"- [{src_id}] {text}")
     return "\n".join(lines)
 
 
 def report_builder(state: ResearchState) -> dict:
     """Format the final report in JSON and Markdown, resolving citations."""
+    llm = get_chat_model(task="report_formatting", temperature=get_settings().report_temperature)
     gaps = state.get("gaps", [])
     landscape = state.get("landscape_summary", "")
     competitors = state.get("competitor_profiles", [])
-    clusters = state.get("pain_point_clusters", [])
+    pain_points = state.get("raw_pain_point_candidates", [])
     positioning = state.get("positioning_suggestions", [])
     source_map = SourceMap(existing_map=state.get("source_map", {}))
 
     # 1. JSON Report (Programmatic/UI) — includes all data
     report_json = {
-        "idea": state.get("parsed_idea"),
+        "idea": state.get("raw_idea"),
         "landscape_summary": landscape,
-        "competitor_profiles": competitors,
-        "pain_point_clusters": clusters,
-        "gaps": gaps,
+        "competitor_profiles": [c.model_dump() if hasattr(c, "model_dump") else c for c in competitors],
+        "pain_points": pain_points,
+        "gaps": [g.model_dump() if hasattr(g, "model_dump") else g for g in gaps],
         "positioning_suggestions": positioning,
         "sources": source_map.to_dict()
     }
 
-    # 2. Markdown Report — now includes competitor profiles and pain points
-    client = LLMClient()
-    competitors_text = _format_competitors_for_prompt(competitors)
-    clusters_text = _format_clusters_for_prompt(clusters)
-    positioning_text = (
-        "\n".join(f"- {s}" for s in positioning)
-        if positioning
-        else "None available."
-    )
-
-    messages = build_messages(
-        landscape,
-        competitors_text,
-        clusters_text,
-        _format_gaps_for_prompt(gaps),
-        positioning_text,
+    # 2. Format inputs for the prompt
+    landscape_text = state.get("landscape_summary", "")
+    competitors_text = _format_competitors_for_prompt(state.get("competitor_profiles", []))
+    pain_points_text = _format_pain_points_for_prompt(state.get("raw_pain_point_candidates", []))
+    gaps_text = _format_gaps_for_prompt(state.get("gaps", []))
+    
+    # 3. Build messages
+    prompt = build_report_prompt(
+        landscape=landscape_text,
+        competitors_text=competitors_text,
+        clusters_text=pain_points_text,
+        gaps=gaps_text,
+        positioning="\n".join(state.get("positioning_suggestions", [])),
     )
 
     try:
-        response = client.complete(
-            task="report_formatting",
-            messages=messages,
-            temperature=0.2,
-            json_mode=False,
-        )
+        response = llm.invoke([SystemMessage(content=prompt)])
         raw_markdown = response.content
-        tokens = response.input_tokens + response.output_tokens
-        provider = response.provider
+        logger.info("report_builder generated markdown report successfully")
+        usage = response.response_metadata.get("token_usage", {})
+        tokens = usage.get("total_tokens", 0)
+        provider = "groq"
     except Exception as e:
         logger.error("Report formatting failed: %s", e)
         raw_markdown = f"# Error\n\nFailed to format report: {e}"
@@ -121,7 +114,7 @@ def report_builder(state: ResearchState) -> dict:
     # Find all [SRC_XXXX] tags and replace with [1](url)
 
     # Extract unique SRC IDs used in the text
-    src_tags = set(re.findall(r"\[(SRC_[A-Z0-9]{4})\]", raw_markdown))
+    src_tags = set(re.findall(r"\[(SRC_[A-Z0-9_]+)\]", raw_markdown))
 
     # Create a numbered reference mapping
     ref_map = {}

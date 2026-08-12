@@ -49,6 +49,26 @@ to the build sequence stages in `ARCHITECTURE.md`.
 
 ## [Unreleased]
 
+### Added
+- Added new agent tools `read_webpage` and `get_app_store_reviews` to replace rigid, single-purpose scraping nodes.
+- Added explicit HTTP timeouts (`timeout=settings.http_timeout`) to LangChain `ChatOpenAI` wrapper in `langchain_models.py` to prevent infinite hanging when OpenRouter connections stall.
+
+### Changed
+- Major architecture refactor: Migrated from a hard-coded 6-agent parallel LangGraph pipeline to a dynamic ReAct agent pipeline managed by a central Orchestrator.
+- Replaced custom `llm_client.py` and raw string prompts with LangChain `BaseChatModel` and `ChatPromptTemplate` abstractions.
+- Changed structured output extraction logic to use native `create_react_agent` tool calling rather than `with_structured_output` to prevent double LLM calls and reduce latency.
+- Updated `src/config/models.py` to utilize smaller, high-speed Nemotron models (`nemotron-3.5-lightning:free`, `nemotron-nano-9b-v2:free`) for `searcher` and `report_formatting` tasks to bypass harsh OpenRouter rate limits.
+- Changed `gaps` state append logic from `operator.add` to simple overwrite in `state.py` to prevent holistic state bloating.
+
+### Fixed
+- Fixed data loss bug (URL tracking collision) in `orchestrator.py`, `deep_diver.py`, and `pain_diver.py` by transitioning from `processed_urls` to `processed_candidates` (tracking by unique `src_id`).
+- Fixed `'ChatPromptTemplate' object has no attribute 'to_messages'` runtime error across all agents by migrating invocation logic to `.format_messages()`.
+- Fixed missing key bug in `report_builder.py` by switching from `parsed_idea` to `raw_idea`.
+- Fixed orchestrator hallucinations by explicitly calculating and injecting the count of unprocessed URLs.
+
+### Removed
+- Removed legacy, rigid scraping agents (`competitor_deep_dive`, `competitor_searcher`, `gap_synthesizer`, `idea_parser`, `pain_point_clusterer`, `pain_point_miner`, `relevance_filter`) in favor of dynamic ReAct `deep_diver`, `pain_diver`, and `thinker`.
+
 ---
 
 ## [v0.3.0] - 2026-08-10
